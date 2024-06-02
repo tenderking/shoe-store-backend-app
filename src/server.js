@@ -1,123 +1,104 @@
-
-const express = require('express');
-const app = express();
-const { MongoClient } = require('mongodb');
-const path = require('path');
-
-
-
-
-
-
+const express = require("express")
+const app = express()
+const path = require("path")
+const connectToDb = require("./db")
+const { ObjectId } = require("mongodb")
+require("dotenv").config()
+PORT = process.env.PORT || 8000
 
 // our first Route
 
+app.use(express.json())
+app.use("/images", express.static(path.join(__dirname, "../assets")))
 
+app.get("/api/products", async (req, res) => {
+  try {
+    const db = await connectToDb()
+    const products = await db.collection("products").find({}).toArray()
+    res.status(200).json(products)
+  } catch (e) {
+    console.log(e)
+  }
+})
 
+app.get("/api/users/:userId/cart", async (req, res) => {
+  try {
+    const { userId } = req.params
+    cartItems = await showCartItems(userId)
 
+    res.status(200).json(cartItems)
+  } catch (e) {
+    console.log(e)
+  }
+})
 
-app.use(express.json());
-app.use(express.urlencoded({extended: false})); 
-app.use('/images', express.static(path.join(__dirname, '../assets')))
+app.get("/api/products/:productId", async (req, res) => {
+  const { productId } = req.params
+  const db = await connectToDb()
+  const product = await db.collection("products").findOne({ id: productId })
+  if (product) {
+    res.status(200).json(product)
+  } else {
+    res.status(404).json("Could not find the product!")
+  }
+})
 
+app.post("/api/users/:userId/cart", async (req, res) => {
+  const { userId } = req.params
+  const productId = req.body.productId
+  console.log(productId)
+  const db = await connectToDb()
+  await db.collection("users").updateOne(
+    { _id: new ObjectId(userId) },
+    {
+      $addToSet: { cartItems: productId },
+    }
+  )
+  cartItems = await showCartItems(userId)
 
-app.get('/api/products', async (req, res) => {
+  res.status(200).json(cartItems)
+})
 
- try  { const client = MongoClient.connect(
-      'mongodb://localhost:27017',
-      { useUnifiedTopology: true });
- 
+app.delete("/api/users/:userId/cart/:productId", async (req, res) => {
+  const { userId, productId } = req.params
 
-      const db = (await client).db('vue-db');
-      const products = await db.collection('products').find({}).toArray();
-      res.status(200).json(products);
+  if (!ObjectId.isValid(userId) || !productId) {
+    return res.status(400).json({ message: "Invalid userId or productId" })
+  }
 
-  } catch(e) {
-      console.log(e);
+  try {
+    const db = await connectToDb()
+    const updateResult = await db
+      .collection("users")
+      .updateOne(
+        { _id: new ObjectId(userId) },
+        { $pull: { cartItems: productId } }
+      )
+
+    if (updateResult.matchedCount === 0) {
+      return res.status(404).json({ message: "User not found" })
     }
 
-})
+    const cartItems = await showCartItems(userId)
 
-app.get('/api/users/:userId/cart', async (req, res) => {
-try{   const { userId } = req.params
-   const client = MongoClient.connect("mongodb://localhost:27017/vue-db", {
-     
-      useUnifiedTopology: true
-
-   })
-   const db = (await client).db('vue-db');
-   const user = await db.collection('users').findOne({ id: userId })
-   if (!user) return res.status(404).json('Could not find User')
-   const products = await db.collection('products').find({}).toArray();
-   const cartItemsIds = user.cartItems;
-   const cartItems = cartItemsIds.map(id => products.find(product => product.id === id))
-
-   res.status(200).json(cartItems)
-  
-}catch(e) {
-   console.log(e);
- }
-})
-
-app.get('/api/products/:productId', async (req, res) => {
-   const { productId } = req.params
-   const client = MongoClient.connect("mongodb://localhost:27017/vue-db", {
-  
-      useUnifiedTopology: true
-   })
-
-   const db = (await client).db('vue-db');
-   const product = await db.collection('products').findOne({ id: productId })
-   if (product) {
-      res.status(200).json(product);
-   }
-   else {
-      res.status(404).json('Could not find the product!');
-   }
-   
-})
-
-app.post('/api/users/:userId/cart', async (req, res) => {
-   const { userId } = req.params;
-   const { productId } = req.body;
-
-   const client = await MongoClient.connect(
-     'mongodb://localhost:27017',
-     { useNewUrlParser: true, useUnifiedTopology: true },
-   );
-   const db =await client.db('vue-db');
-  await db.collection('users').updateOne({ id: userId }, {
-     $addToSet: { cartItems: productId },
-     
-   });
-   
- 
-   const user = await db.collection('users').findOne({ id: userId });
-   const cartItemIds = user.cartItems;
-   const products = await db.collection('products').find({}).toArray();
-   const cartItems = cartItemIds.map(id =>
-     products.find(product => product.id === id));
-    
-   res.status(200).json(cartItems);
-  
- }); 
-
-
-app.delete('/api/users/:userId/cart/:productId', async (req, res) => {
-   const { userId, productId } = req.params;
-   const client = MongoClient.connect(
-      'mongodb://localhost:27017',
-      { UseNewUrlParser: true, useUnifiedTopology: true });
-   const db = (await client).db('vue-db');
-   await db.collection('users').updateOne({ id: userId }, {
-      $pull: { cartItems: productId },
-   })
-   const user = await db.collection('users').findOne({ id: userId })
-   const cartItemsIds = user.cartItems;
-   const products = await db.collection('products').find({}).toArray();
-   const cartItems = cartItemsIds.map(id => 
-      products.find(product => product.id === id))
-   res.status(200).json(cartItems)
+    return res.status(200).json(cartItems)
+  } catch (error) {
+    console.error("Error handling delete request:", error)
+    return res.status(500).json({ message: "Internal server error" })
+  }
   
 })
-app.listen(8000, () => console.log('My first app listening on port 8000! '));
+app.listen(PORT, () => console.log("listening on port " + PORT + "!"))
+
+async function showCartItems(userId) {
+  const db = await connectToDb()
+  const user = await db
+    .collection("users")
+    .findOne({ _id: new ObjectId(userId) })
+  const cartItemsIds = user.cartItems
+  const products = await db.collection("products").find({}).toArray()
+  const cartItems = cartItemsIds.map((id) =>
+    products.find((product) => product.id === id)
+  )
+  return cartItems
+}
