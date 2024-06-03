@@ -2,20 +2,32 @@ const express = require("express")
 const app = express()
 const path = require("path")
 const connectToDb = require("./db")
+const cors = require('cors');
 const { ObjectId } = require("mongodb")
 require("dotenv").config()
 PORT = process.env.PORT || 8000
+BASE_URL = process.env.BASE_URL || "http://localhost:8000"
 
 // our first Route
 
 app.use(express.json())
+app.use(cors(
+  {origin: 'http://localhost:5173'}
+))
 app.use("/images", express.static(path.join(__dirname, "../assets")))
 
 app.get("/api/products", async (req, res) => {
   try {
     const db = await connectToDb()
     const products = await db.collection("products").find({}).toArray()
-    res.status(200).json(products)
+
+productsWithImages= products.map((product) => {
+  return {
+    ...product,
+    imageUrl: `${BASE_URL}/images/${product.imageUrl}`,
+  }
+})
+    res.status(200).json(productsWithImages);
   } catch (e) {
     console.log(e)
   }
@@ -25,6 +37,12 @@ app.get("/api/users/:userId/cart", async (req, res) => {
   try {
     const { userId } = req.params
     cartItems = await showCartItems(userId)
+    cartItems= await cartItems.map((product) => {
+      return {
+        ...product,
+        imageUrl: `${BASE_URL}/images/${product.imageUrl}`,
+      }
+    })
 
     res.status(200).json(cartItems)
   } catch (e) {
@@ -37,7 +55,8 @@ app.get("/api/products/:productId", async (req, res) => {
   const db = await connectToDb()
   const product = await db.collection("products").findOne({ id: productId })
   if (product) {
-    res.status(200).json(product)
+    product.imageUrl = `${BASE_URL}/images/${product.imageUrl}`
+    res.status(200).json((product))
   } else {
     res.status(404).json("Could not find the product!")
   }
@@ -102,3 +121,4 @@ async function showCartItems(userId) {
   )
   return cartItems
 }
+
