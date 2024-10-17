@@ -6,20 +6,22 @@ const { getUserByEmail, createUser, comparePasswords, blacklistToken } = require
 const auth = require("./middleware/auth");
 const jwt = require("jsonwebtoken");
 const jsend = require("jsend");
+const cookieParser = require("cookie-parser");
 const router = express.Router();
 router.use(jsend.middleware);
+router.use(cookieParser());
 const BASE_URL = process.env.BASE_URL || "http://localhost:8000";
 
 // Home route
 router.get("/", (req, res) => {
-  res.send("Hello World!");
+  res.status(200).send("Hello World!");
 });
 
 // Get all products
 router.get("/api/products", async (req, res, next) => {
   try {
     const products = await getAllProducts(BASE_URL);
-    res.jsend.success(products);
+    res.status(200).jsend.success(products);
   } catch (err) {
     next(err);
   }
@@ -31,9 +33,9 @@ router.get("/api/products/:productId", async (req, res, next) => {
   try {
     const product = await getProductById(productId, BASE_URL);
     if (product) {
-      res.jsend.success(product);
+      res.status(200).jsend.success(product);
     } else {
-      res.jsend.fail({ message: "Product not found" });
+      res.status(404).jsend.fail({ message: "Product not found" });
     }
   } catch (err) {
     next(err);
@@ -45,21 +47,25 @@ router.get("/api/users/:userId/cart", auth, async (req, res, next) => {
   const { userId } = req.params;
   try {
     const cartItems = await showCartItems(userId);
-    res.jsend.success(cartItems);
+    res.status(200).jsend.success(cartItems);
   } catch (err) {
     next(err);
   }
-});
-
-// Add to cart
+})
 router.post("/api/users/:userId/cart", auth, async (req, res, next) => {
   const { userId } = req.params;
   const { productId } = req.body;
+
   try {
     const updatedCart = await addToCart(userId, productId);
-    res.jsend.success(updatedCart);
+    res.status(201).jsend.success(updatedCart);
   } catch (err) {
-    next(err);
+    // More specific error handling
+    if (err.message === "Product already in cart") {
+      res.status(400).jsend.fail({ message: err.message });
+    } else {
+      next(err); // Pass other errors to the error handling middleware
+    }
   }
 });
 
@@ -68,27 +74,21 @@ router.delete("/api/users/:userId/cart/:productId", auth, async (req, res, next)
   const { userId, productId } = req.params;
   try {
     const updatedCart = await removeFromCart(userId, productId);
-    res.jsend.success(updatedCart);
+    res.status(204).jsend.success(updatedCart);
   } catch (err) {
     next(err);
   }
 });
 
 router.post("/signup", async (req, res, next) => {
-
   const { email, password, name } = req.body;
-
   try {
-
     const existingUser = await getUserByEmail(email);
     if (existingUser) {
-      return res.jsend.fail({ message: "Email is already registered." });
+      return res.status(409).jsend.fail({ message: "Email is already registered." });
     }
 
-
-    const newUser = await createUser({
-      name, email, password
-    });
+    const newUser = await createUser({ name, email, password });
 
     let token = jwt.sign(
       {
@@ -99,7 +99,7 @@ router.post("/signup", async (req, res, next) => {
       { expiresIn: "1h" }
     );
 
-    return res.jsend.success({
+    return res.status(201).jsend.success({
       userId: newUser._id,
       email: newUser.email,
       token: token
@@ -112,14 +112,8 @@ router.post("/signup", async (req, res, next) => {
 
 // Post for registered users to be able to login
 router.post("/login", async (req, res, next) => {
-
-  // #swagger.tags = ['Login / Signup']
-  // #swagger.produces = ['text/html']
-
   let { email, password } = req.body;
-
   try {
-
     const existingUser = await getUserByEmail(email);
 
     if (!existingUser) {
@@ -132,7 +126,7 @@ router.post("/login", async (req, res, next) => {
     const isPasswordValid = await comparePasswords(password, existingUser.hashedPassword.toString());
 
     if (!isPasswordValid) {
-      return res.jsend.fail({
+      return res.status(401).jsend.fail({
         code: 401,
         message: "Wrong password, please check your credentials."
       });
@@ -146,8 +140,13 @@ router.post("/login", async (req, res, next) => {
       process.env.JWT_SECRET,
       { expiresIn: "1h" }
     );
-
-    return res.jsend.success({
+    res.cookie('jwt', token, {
+      httpOnly: true, // Prevent client-side JavaScript access 
+      secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
+      maxAge: 3600000 // 1 hour (same as token expiration)
+    });
+    console.log({ userId: existingUser._id, email: existingUser.email, token: token });
+    return res.status(200).jsend.success({
       userId: existingUser._id,
       email: existingUser.email,
       token: token
@@ -160,18 +159,27 @@ router.post("/login", async (req, res, next) => {
 
 router.post("/logout", auth, async (req, res, next) => {
   try {
-    // 1. Blacklist the Token (Optional but Recommended)
-    const token = req.headers.authorization.split(" ")[1]; // Assuming "Bearer <token>" format
+    const token = req.headers.authorization; // Assuming "Bearer <token>" format
     await blacklistToken(token); // Add token to a blacklist (database, Redis, etc.)
 
-    // 2. Clear the Cookie (if used)
     res.clearCookie('jwt'); // Or the name of your JWT cookie
 
-    // 3. (For Frontend) Instruct the Client to Remove Token
-    res.jsend.success({ message: "Logout successful" }); // Send a success response
+    res.status(200).jsend.success({ message: "Logout successful" });
 
   } catch (err) {
     next(err);
   }
 });
+
+router.get("/token", auth, async (req, res, next) => {
+  try {
+    if (!req.user) {
+      throw new Error('Token is invalid');
+    }
+    res.status(200).jsend.success({ message: "Token is valid" });
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;

@@ -10,7 +10,7 @@ async function createUser({ name, email, password }) {
 
 async function getUserById(userId) {
   const db = await connectToDb();
-  const user = await db.collection("users").findOne({ _id: ObjectId.createFromTime(userId) });
+  const user = await db.collection("users").findOne({ _id: new ObjectId(userId) });
   if (!user) {
     throw new Error('User not found');
   }
@@ -36,6 +36,9 @@ function comparePasswords(password, hashedPassword) {
 
 async function blacklistToken(token) {
   const db = await connectToDb();
+  if (await db.collection("blacklist").findOne({ token })) {
+    return;
+  }
   await db.collection("blacklist").insertOne({ token });
 }
 module.exports = { createUser, getUserById, getUserByEmail, hashPassword, comparePasswords, blacklistToken };
