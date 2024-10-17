@@ -18,4 +18,6 @@ async function connectToDb() {
   return db
 }
 
+
+
 module.exports = connectToDb
