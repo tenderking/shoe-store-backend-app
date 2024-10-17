@@ -1,7 +1,10 @@
 const jwt = require('jsonwebtoken');
 
 module.exports = async (req, res, next) => {
-  const token = req.headers.authorization;
+  let token = req.headers.authorization;
+  if (token && token.startsWith('Bearer ')) {
+    token = token.slice(7, token.length);
+  }
   if (!token) {
     return res.status(401).json({
       status: 'fail',
